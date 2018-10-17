@@ -2,9 +2,9 @@
 """ Persistent queue on file system """
 
 import os
-import io
 import fcntl
 import logging
+from binascii import crc32
 
 _log = logging.getLogger(__name__)
 
@@ -34,8 +34,18 @@ def compute_p2m16(v):
 	return 16
 
 
+def cmp_serial(a, b):
+	if ((a & SERIAL_BOUNDMASK) == SERIAL_BOUNDMASK) and ((b & SERIAL_BOUNDMASK) == 0):
+		return -1
+	if a < b:
+		return -1
+	if a == b:
+		return 0
+	return 1
+
+
 def invoke_with_lock(lock_filepath, invoke_callable, *args, **kwds):
-	with io.open(lock_filepath, "w") as lfp:
+	with open(lock_filepath, "w") as lfp:
 		fcntl.flock(lfp, fcntl.LOCK_EX)
 		v = invoke_callable(*args, **kwds)
 		fcntl.flock(lfp, fcntl.LOCK_UN)
@@ -44,7 +54,7 @@ def invoke_with_lock(lock_filepath, invoke_callable, *args, **kwds):
 
 def read_serial(filepath, default_value=None):
 	try:
-		with io.open(filepath, "r") as fp:
+		with open(filepath, "r") as fp:
 			l = fp.read()
 		return int(l.strip())
 	except Exception as e:
@@ -55,7 +65,7 @@ def read_serial(filepath, default_value=None):
 def write_serial(filepath, v):
 	try:
 		aux = str(v) + "\n"
-		with io.open(filepath, "w") as fp:
+		with open(filepath, "w") as fp:
 			fp.write(aux)
 		return True
 	except Exception:
@@ -68,6 +78,23 @@ def increment_serial(filepath):
 	n = (v + 1) & SERIAL_VALUEMASK
 	update_success = write_serial(filepath, n)
 	return (v, update_success)
+
+
+def update_serial(filepath, n):
+	v = read_serial(filepath, None)
+	if (v is not None) and (cmp_serial(n, v) <= 0):
+		return True
+	return write_serial(filepath, n)
+
+
+def check_skip_record(rec_sn, pick_rec_sn, progress_sn, bound_sn):
+	if cmp_serial(rec_sn, bound_sn) > 0:
+		return True
+	if (progress_sn is not None) and (cmp_serial(rec_sn, progress_sn) <= 0):
+		return True
+	if (pick_rec_sn is not None) and (cmp_serial(pick_rec_sn, rec_sn) < 0):
+		return True
+	return False
 
 
 class PersistentQueueViaTextFolder(object):
@@ -87,3 +114,108 @@ class PersistentQueueViaTextFolder(object):
 		s_path = os.path.join(self.folder_path, name + ".txt")
 		l_path = os.path.join(self.folder_path, "." + name + ".lock")
 		return (s_path, l_path)
+
+	def _pack(self, serial_val, d):
+		aux = self.serializer_callable(d)
+		checksum = crc32(aux) & 0xFFFFFFFF
+		v = (str(serial_val), str(checksum), aux)
+		return "\t".join(v) + "\n"
+
+	def _unpack0(self, l):
+		rec_sn, remain = l.split("\t", 1)
+		rec_sn = int(rec_sn)
+		return (rec_sn, remain)
+
+	def _unpack1(self, l):
+		checksum, remain = l.split("\t", 1)
+		checksum = int(checksum)
+		lpkg = remain.rstrip(_UNWANT_CHAR)
+		r_cksum = crc32(lpkg) & 0xFFFFFFFF
+		if r_cksum != checksum:
+			raise ValueError("checksum mis-match: %r vs. %r" % (r_cksum, checksum))
+		return lpkg
+
+	def _enqueue_impl(self, d):
+		tip_sn, update_success = increment_serial(self._tip_filepath)
+		if not update_success:
+			raise ValueError("cannot update tip serial: %r" % (self._tip_filepath, ))
+		page_id = tip_sn >> self.collection_size_shift
+		qfname = "q-%d.txt" % (page_id, )
+		qfpath = os.path.join(self.folder_path, qfname)
+		l = self._pack(tip_sn, d)
+		with open(qfpath, "a") as fp:
+			fp.write(l)
+		if not invoke_with_lock(self._commit_lockpath, update_serial, self._commit_filepath, tip_sn):
+			raise ValueError("failed on updating serial %r into file %r" % (tip_sn, self._commit_filepath))
+		return tip_sn
+
+	def enqueue(self, d):
+		return invoke_with_lock(self._tip_lockpath, self._enqueue_impl, d)
+
+	def cmp_page_id(self, a, b):
+		a = a << self.collection_size_shift
+		b = b << self.collection_size_shift
+		return cmp_serial(a, b)
+
+	def _dequeue_impl_linescan(self, progress_sn, bound_sn, fp, pick_rec_sn, pick_lpkg):
+		for l in fp:
+			try:
+				rec_sn, aux = self._unpack0(l)
+			except Exception:
+				_log.exception("failed on unpack-0: %r", l)
+				continue
+			if check_skip_record(rec_sn, pick_rec_sn, progress_sn, bound_sn):
+				continue
+			try:
+				rec_lpkg = self._unpack1(aux)
+			except Exception:
+				_log.exception("failed on unpack-1 %r", aux)
+				continue
+			pick_rec_sn = rec_sn
+			pick_lpkg = rec_lpkg
+		return (pick_rec_sn, pick_lpkg)
+
+	def _dequeue_impl_check_qfile_page_rng(self, min_page_id, bound_page_id, fname):
+		try:
+			f_page_id = int(fname[2:-4])
+		except Exception:
+			_log.exception("failed on getting page id from file %r", fname)
+			return None
+		if self.cmp_page_id(f_page_id, bound_page_id) > 0:
+			return None
+		qfpath = os.path.join(self.folder_path, fname)
+		if (min_page_id is not None) and (self.cmp_page_id(f_page_id, min_page_id) < 0):
+			try:
+				os.unlink(qfpath)
+			except Exception:
+				_log.exception("failed on deleting expired queue file: %r", qfpath)
+			return None
+		return qfpath
+
+	def _dequeue_impl_filescan(self, min_page_id, bound_page_id, progress_sn, bound_sn, fname, pick_rec_sn, pick_lpkg):
+		qfpath = self._dequeue_impl_check_qfile_page_rng(min_page_id, bound_page_id, fname)
+		if qfpath:
+			with open(qfpath, "r") as fp:
+				pick_rec_sn, pick_lpkg = self._dequeue_impl_linescan(progress_sn, bound_sn, fp, pick_rec_sn, pick_lpkg)
+		return (pick_rec_sn, pick_lpkg)
+
+	def _dequeue_impl(self):
+		bound_sn = invoke_with_lock(self._commit_lockpath, read_serial, self._commit_filepath, None)
+		if bound_sn is None:
+			return None
+		progress_sn = read_serial(self._progress_filepath)
+		min_page_id = (progress_sn >> self.collection_size_shift) if (progress_sn is not None) else None
+		bound_page_id = bound_sn >> self.collection_size_shift
+		fl = os.listdir(self.folder_path)
+		pick_rec_sn = None
+		pick_lpkg = None
+		for fname in fl:
+			pick_rec_sn, pick_lpkg = self._dequeue_impl_filescan(min_page_id, bound_page_id, progress_sn, bound_sn, fname, pick_rec_sn, pick_lpkg)
+		if pick_rec_sn is None:
+			return None
+		if not write_serial(self._progress_filepath, pick_rec_sn):
+			raise ValueError("cannot write progress serial %r" % (pick_rec_sn, ))
+		return None if (pick_lpkg is None) else self.unserializer_callable(pick_lpkg)
+
+	def dequeue(self):
+		return invoke_with_lock(self._progress_lockpath, self._dequeue_impl)
