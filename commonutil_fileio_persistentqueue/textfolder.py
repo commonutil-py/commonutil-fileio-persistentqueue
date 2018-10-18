@@ -150,6 +150,8 @@ class PersistentQueueViaTextFolder(object):
 		return tip_sn
 
 	def enqueue(self, d):
+		if not self.serializer_callable:
+			raise ValueError("need serializer_callable for enqueue")
 		return invoke_with_lock(self._tip_lockpath, self._enqueue_impl, d)
 
 	def cmp_page_id(self, a, b):
@@ -218,4 +220,6 @@ class PersistentQueueViaTextFolder(object):
 		return None if (pick_lpkg is None) else self.unserializer_callable(pick_lpkg)
 
 	def dequeue(self):
+		if not self.unserializer_callable:
+			raise ValueError("need unserializer_callable for dequeue")
 		return invoke_with_lock(self._progress_lockpath, self._dequeue_impl)
