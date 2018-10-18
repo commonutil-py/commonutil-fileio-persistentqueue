@@ -38,7 +38,7 @@ def main():
 				sys.stdout.write("\033[2K\r[\033[93mERR\033[0m]: serial not continue: [%r - %r]\n" % (last_fetch, sn))
 		current_t = time.time() * 10
 		if current_t - display_t > 2:
-			sys.stdout.write("\033[2K\rGet: (%r) %r (took %f)." % (
+			sys.stdout.write("\033[2K\rdequeue: (%r) %r (took %f)." % (
 					v["producer_id"],
 					sn,
 					(t_dq_e - t_dq_s),

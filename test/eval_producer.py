@@ -33,11 +33,14 @@ def main():
 				"producer_id": producer_id,
 				"value": idx,
 		}
+		t_eq_s = time.time()
 		pq.enqueue(aux)
+		t_eq_e = time.time()
 		if (idx & 0xFFF) == 0xFFF:
-			sys.stdout.write("\033[2K\renqueue: (%r) %r." % (
+			sys.stdout.write("\033[2K\renqueue: (%r) %r (took %f)." % (
 					producer_id,
 					idx,
+					(t_eq_e - t_eq_s),
 			))
 			sys.stdout.flush()
 			time.sleep(3)
