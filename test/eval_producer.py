@@ -36,14 +36,14 @@ def main():
 		t_eq_s = time.time()
 		pq.enqueue(aux)
 		t_eq_e = time.time()
-		if (idx & 0xFFF) == 0xFFF:
+		if (idx & 0x7FF) == 0x7FF:
 			sys.stdout.write("\033[2K\renqueue: (%r) %r (took %f)." % (
 					producer_id,
 					idx,
 					(t_eq_e - t_eq_s),
 			))
 			sys.stdout.flush()
-			time.sleep(3)
+			time.sleep(2)
 	sys.stdout.write("\nExit.\n")
 
 
