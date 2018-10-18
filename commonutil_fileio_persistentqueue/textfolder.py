@@ -212,6 +212,8 @@ class PersistentQueueViaTextFolder(object):
 		pick_rec_sn = None
 		pick_lpkg = None
 		for fname in fl:
+			if fname[:2] != "q-":
+				continue
 			pick_rec_sn, pick_lpkg = self._dequeue_impl_filescan(min_page_id, bound_page_id, progress_sn, bound_sn, fname, pick_rec_sn, pick_lpkg)
 		if pick_rec_sn is None:
 			return None
