@@ -5,7 +5,7 @@ from setuptools import setup  # pylint: disable=import-error
 
 setup(
 		name="commonutil-fileio-persistentqueue",
-		version="0.0.2",  # REV-CONSTANT:rev 5d022db7d38f580a850cd995e26a6c2f
+		version="0.1.0",  # REV-CONSTANT:rev 5d022db7d38f580a850cd995e26a6c2f
 		description="Persistent queue on file system",
 		packages=[
 				"commonutil_fileio_persistentqueue",
