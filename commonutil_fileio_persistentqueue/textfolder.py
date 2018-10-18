@@ -177,15 +177,10 @@ class PersistentQueueViaTextFolder(object):
 			pick_lpkg = rec_lpkg
 		return (pick_rec_sn, pick_lpkg)
 
-	def _dequeue_impl_check_qfile_page_rng(self, min_page_id, bound_page_id, fname):
-		try:
-			f_page_id = int(fname[2:-4])
-		except Exception:
-			_log.exception("failed on getting page id from file %r", fname)
-			return None
+	def _dequeue_impl_check_qfile_page_rng(self, min_page_id, bound_page_id, f_page_id, f_name):
 		if self.cmp_page_id(f_page_id, bound_page_id) > 0:
 			return None
-		qfpath = os.path.join(self.folder_path, fname)
+		qfpath = os.path.join(self.folder_path, f_name)
 		if (min_page_id is not None) and (self.cmp_page_id(f_page_id, min_page_id) < 0):
 			try:
 				os.unlink(qfpath)
@@ -194,12 +189,26 @@ class PersistentQueueViaTextFolder(object):
 			return None
 		return qfpath
 
-	def _dequeue_impl_filescan(self, min_page_id, bound_page_id, progress_sn, bound_sn, fname, pick_rec_sn, pick_lpkg):
-		qfpath = self._dequeue_impl_check_qfile_page_rng(min_page_id, bound_page_id, fname)
+	def _dequeue_impl_filescan(self, min_page_id, bound_page_id, progress_sn, bound_sn, f_page_id, f_name, pick_rec_sn, pick_lpkg):
+		qfpath = self._dequeue_impl_check_qfile_page_rng(min_page_id, bound_page_id, f_page_id, f_name)
 		if qfpath:
 			with open(qfpath, "r") as fp:
 				pick_rec_sn, pick_lpkg = self._dequeue_impl_linescan(progress_sn, bound_sn, fp, pick_rec_sn, pick_lpkg)
 		return (pick_rec_sn, pick_lpkg)
+
+	def _dequeue_impl_sort_filename(self, filenames):
+		result = []
+		for f_name in filenames:
+			if f_name[:2] != "q-":
+				continue
+			try:
+				f_page_id = int(f_name[2:-4])
+			except Exception:
+				_log.exception("failed on getting page id from file %r", f_name)
+			aux = (f_page_id, f_name)
+			result.append(aux)
+		result.sort(key=lambda x: x[0])
+		return result
 
 	def _dequeue_impl(self):
 		bound_sn = invoke_with_lock(self._commit_lockpath, read_serial, self._commit_filepath, None)
@@ -211,10 +220,11 @@ class PersistentQueueViaTextFolder(object):
 		fl = os.listdir(self.folder_path)
 		pick_rec_sn = None
 		pick_lpkg = None
-		for fname in fl:
-			if fname[:2] != "q-":
-				continue
-			pick_rec_sn, pick_lpkg = self._dequeue_impl_filescan(min_page_id, bound_page_id, progress_sn, bound_sn, fname, pick_rec_sn, pick_lpkg)
+		fl = self._dequeue_impl_sort_filename(fl)
+		for f_page_id, f_name in fl:
+			pick_rec_sn, pick_lpkg = self._dequeue_impl_filescan(min_page_id, bound_page_id, progress_sn, bound_sn, f_page_id, f_name, pick_rec_sn, pick_lpkg)
+			if pick_rec_sn is not None:
+				break
 		if pick_rec_sn is None:
 			return None
 		if not write_serial(self._progress_filepath, pick_rec_sn):
