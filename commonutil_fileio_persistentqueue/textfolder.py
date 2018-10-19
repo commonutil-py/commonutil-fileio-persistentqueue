@@ -12,6 +12,7 @@ _UNWANT_CHAR = "\n\r\x00"
 
 SERIAL_VALUEMASK = 0xFFFFFF
 SERIAL_BOUNDMASK = 0xFFF000
+SERIAL_RINGSHIFT = 0x001000
 
 
 def sanitize(v, replace_char=None):
@@ -109,6 +110,8 @@ class PersistentQueueViaTextFolder(object):
 		self._tip_filepath, self._tip_lockpath = self._make_serial_path_pair("tip")
 		self._commit_filepath, self._commit_lockpath = self._make_serial_path_pair("commit")
 		self._progress_filepath, self._progress_lockpath = self._make_serial_path_pair("progress")
+		if (SERIAL_RINGSHIFT >> self.collection_size_shift) == 0:
+			raise ValueError("collection size too large")
 
 	def _make_serial_path_pair(self, name):
 		s_path = os.path.join(self.folder_path, name + ".txt")
@@ -198,16 +201,22 @@ class PersistentQueueViaTextFolder(object):
 
 	def _dequeue_impl_sort_filename(self, filenames):
 		result = []
+		rotated_mask = SERIAL_BOUNDMASK >> self.collection_size_shift
+		rotated_rgft = SERIAL_RINGSHIFT >> self.collection_size_shift
+		sort_mode = 0
 		for f_name in filenames:
 			if f_name[:2] != "q-":
 				continue
 			try:
 				f_page_id = int(f_name[2:-4])
+				f_rgft_id = (f_page_id + rotated_rgft) & rotated_mask
 			except Exception:
 				_log.exception("failed on getting page id from file %r", f_name)
-			aux = (f_page_id, f_name)
+			aux = (f_page_id, f_name, f_rgft_id)
+			if (f_page_id & rotated_mask) == rotated_mask:
+				sort_mode = 2
 			result.append(aux)
-		result.sort(key=lambda x: x[0])
+		result.sort(key=lambda x: x[sort_mode])
 		return result
 
 	def _dequeue_impl(self):
@@ -221,7 +230,7 @@ class PersistentQueueViaTextFolder(object):
 		pick_rec_sn = None
 		pick_lpkg = None
 		fl = self._dequeue_impl_sort_filename(fl)
-		for f_page_id, f_name in fl:
+		for f_page_id, f_name, _f_rgft_id in fl:
 			pick_rec_sn, pick_lpkg = self._dequeue_impl_filescan(min_page_id, bound_page_id, progress_sn, bound_sn, f_page_id, f_name, pick_rec_sn, pick_lpkg)
 			if pick_rec_sn is not None:
 				break
