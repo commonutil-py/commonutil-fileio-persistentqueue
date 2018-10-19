@@ -36,8 +36,12 @@ def compute_p2m16(v):
 
 
 def cmp_serial(a, b):
-	if ((a & SERIAL_BOUNDMASK) == SERIAL_BOUNDMASK) and ((b & SERIAL_BOUNDMASK) == 0):
+	am = a & SERIAL_BOUNDMASK
+	bm = b & SERIAL_BOUNDMASK
+	if (am == SERIAL_BOUNDMASK) and (bm == 0):
 		return -1
+	if (bm == SERIAL_BOUNDMASK) and (am == 0):
+		return 1
 	if a < b:
 		return -1
 	if a == b:
