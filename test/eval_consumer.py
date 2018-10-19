@@ -36,7 +36,7 @@ def main():
 		last_fetch = last_fetches.get(p_id)
 		if last_fetch is not None:
 			if (last_fetch + 1) != sn:
-				sys.stdout.write("\033[2K\r[\033[93mERR\033[0m]: serial not continue: [%r - %r](%r)\n" % (last_fetch, sn, p_id))
+				sys.stdout.write("\033[2K\r[\033[31mWARN\033[0m]: serial not continue: [%r - %r](%r)\n" % (last_fetch, sn, p_id))
 		current_t = time.time() * 10
 		t_dq = current_t - display_t
 		if (t_dq > 5) or ((t_dq > 2) and (display_p != p_id)):
