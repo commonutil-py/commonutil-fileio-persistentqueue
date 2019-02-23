@@ -28,7 +28,7 @@ def sanitize(v, replace_char=None):
 
 
 def compute_p2m16(v):
-	for idx in xrange(1, 16):
+	for idx in range(1, 16):
 		if v >> idx:
 			continue
 		return idx

@@ -41,7 +41,7 @@ def main():
 	_log.info("queue folder: [%s]", _QFOLDER)
 	_log.info("producer_id: [%s], range-start: %d.", producer_id, rng_start)
 	pq = PersistentQueueViaTextFolder(_QFOLDER, serializer_callable=json_dumps)
-	for idx in xrange(rng_start, RANGE_END):
+	for idx in range(rng_start, RANGE_END):
 		aux = {
 				"producer_id": producer_id,
 				"value": idx,
