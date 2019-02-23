@@ -102,10 +102,10 @@ def check_skip_record(rec_sn, pick_rec_sn, progress_sn, bound_sn):
 	return False
 
 
-class PersistentQueueViaTextFolder(object):
+class PersistentQueueViaTextFolder:
 	# pylint: disable=too-many-arguments
 	def __init__(self, folder_path, unserializer_callable=None, serializer_callable=None, collection_size=0x40, special_char_replacement=" ", *args, **kwds):
-		super(PersistentQueueViaTextFolder, self).__init__(*args, **kwds)
+		super().__init__(*args, **kwds)
 		self.folder_path = folder_path
 		self.unserializer_callable = unserializer_callable
 		self.serializer_callable = serializer_callable
