@@ -59,7 +59,7 @@ def invoke_with_lock(lock_filepath, invoke_callable, *args, **kwds):
 
 def read_serial(filepath, default_value=None):
 	try:
-		with open(filepath, "r") as fp:
+		with open(filepath, "r", encoding="ascii") as fp:
 			l = fp.read()
 		return int(l.strip())
 	except Exception as e:
@@ -70,7 +70,7 @@ def read_serial(filepath, default_value=None):
 def write_serial(filepath, v):
 	try:
 		aux = str(v) + "\n"
-		with open(filepath, "w") as fp:
+		with open(filepath, "w", encoding="ascii") as fp:
 			fp.write(aux)
 		return True
 	except Exception:
@@ -124,7 +124,7 @@ class PersistentQueueViaTextFolder:
 
 	def _pack(self, serial_val, d):
 		aux = self.serializer_callable(d)
-		checksum = crc32(aux) & 0xFFFFFFFF
+		checksum = crc32(aux.encode("utf-8", "ignore")) & 0xFFFFFFFF
 		v = (str(serial_val), str(checksum), aux)
 		return "\t".join(v) + "\n"
 
@@ -137,7 +137,7 @@ class PersistentQueueViaTextFolder:
 		checksum, remain = l.split("\t", 1)
 		checksum = int(checksum)
 		lpkg = remain.rstrip(_UNWANT_CHAR)
-		r_cksum = crc32(lpkg) & 0xFFFFFFFF
+		r_cksum = crc32(lpkg.encode("utf-8", "ignore")) & 0xFFFFFFFF
 		if r_cksum != checksum:
 			raise ValueError("checksum mis-match: %r vs. %r" % (r_cksum, checksum))
 		return lpkg
@@ -150,7 +150,7 @@ class PersistentQueueViaTextFolder:
 		qfname = "q-%d.txt" % (page_id, )
 		qfpath = os.path.join(self.folder_path, qfname)
 		l = self._pack(tip_sn, d)
-		with open(qfpath, "a") as fp:
+		with open(qfpath, "a", encoding="utf-8", errors="ignore") as fp:
 			fp.write(l)
 		if not invoke_with_lock(self._commit_lockpath, update_serial, self._commit_filepath, tip_sn):
 			raise ValueError("failed on updating serial %r into file %r" % (tip_sn, self._commit_filepath))
@@ -199,7 +199,7 @@ class PersistentQueueViaTextFolder:
 	def _dequeue_impl_filescan(self, min_page_id, bound_page_id, progress_sn, bound_sn, f_page_id, f_name, pick_rec_sn, pick_lpkg):
 		qfpath = self._dequeue_impl_check_qfile_page_rng(min_page_id, bound_page_id, f_page_id, f_name)
 		if qfpath:
-			with open(qfpath, "r") as fp:
+			with open(qfpath, "r", encoding="utf-8", errors="ignore") as fp:
 				pick_rec_sn, pick_lpkg = self._dequeue_impl_linescan(progress_sn, bound_sn, fp, pick_rec_sn, pick_lpkg)
 		return (pick_rec_sn, pick_lpkg)
 
